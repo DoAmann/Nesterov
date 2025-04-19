@@ -78,7 +78,6 @@ abs_Psi0_sq = np.abs(Psi_0)**2
 abs_Psineg_sq = np.abs(Psi_neg)**2
 abs_Psipos_sq = np.abs(Psi_pos)**2
 
- 
 # updating wavefunctions
 rho = abs_Psi0_sq + abs_Psineg_sq + abs_Psipos_sq
     
@@ -118,9 +117,9 @@ while np.max([e_0, e_neg, e_pos])>tol and i < ITER:
     Psi2_pos = ifftn(FT_Psi2_pos)
 
     #gradient restart
-    sum1 = np.sum((np.conj((1/2) * Lap * FT_Psi1_0 + FT_PsiX_0)) * (FT_PsiX_0 - FT_Psi1_0))
-    sum2 = np.sum((np.conj((1/2) * Lap * FT_Psi1_neg + FT_PsiX_neg)) * (FT_PsiX_neg - FT_Psi1_neg))
-    sum3 = np.sum((np.conj((1/2) * Lap * FT_Psi1_pos + FT_PsiX_pos)) * (FT_PsiX_pos - FT_Psi1_pos))
+    sum1 = np.sum((np.conj((1/2) * Lap * FT_Psi1_0 + FT_PsiX_0)) * (FT_Psi2_0 - FT_Psi1_0))
+    sum2 = np.sum((np.conj((1/2) * Lap * FT_Psi1_neg + FT_PsiX_neg)) * (FT_Psi2_neg - FT_Psi1_neg))
+    sum3 = np.sum((np.conj((1/2) * Lap * FT_Psi1_pos + FT_PsiX_pos)) * (FT_Psi2_pos - FT_Psi1_pos))
 
     cond1 = sum1 + sum2 + sum3
     if cond1 > 0 and ii > Restart:

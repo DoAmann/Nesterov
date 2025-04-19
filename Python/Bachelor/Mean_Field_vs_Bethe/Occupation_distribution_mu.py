@@ -1,9 +1,12 @@
+from multiprocessing import Pool
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fftn, ifftn 
 import scipy.constants as const
+import multiprocessing as mp
+import time
 
-def linear_Zeeman_groundstate(mu_zeeman, p, params):
+def free_BEC_groundstate(mu_zeeman, p, params):
     # properties of the grid
     N_points = 2**11 # number of gridpoints
 
@@ -78,7 +81,7 @@ def linear_Zeeman_groundstate(mu_zeeman, p, params):
     dt = params[0]; c_pre = params[1];               #stepsize and parameter for preconditioner
     Restart = params[2]                     #for the condition of restarting
     restarts = 0                    #for counting the number of restarts
-    ITER = 140000                     #number of maximal iterations
+    ITER = 180000                     #number of maximal iterations
     tol=10**(-10)                   #tolerance
     tol_mu = 1e-1                      # choose how mu is calculated
     jj = 0; ii = 0; i = 0 
@@ -86,25 +89,8 @@ def linear_Zeeman_groundstate(mu_zeeman, p, params):
 
     P_inv =  (1/(c_pre - Lap))
 
-    q_val = np.copy(q)
     while np.max([e_0, e_neg, e_pos])>tol and i < ITER:
         i += 1; ii += 1; jj += 1
-
-        # for small q
-        if (q_val != 0) and (q_val > 0): 
-            if np.abs(q_val) < 0.01 and i < 1000:
-                q = 0.01
-            elif np.abs(q_val) < 0.01 and 1000 < i < 1500:
-                q = (q_val + q)/2
-            elif np.abs(q_val) < 0.01 and i > 1500:
-                q = q_val
-        elif (q_val != 0) and (q_val < 0): 
-            if np.abs(q_val) < 0.01 and i < 1000:
-                q = -0.01
-            elif np.abs(q_val) < 0.01 and 1000 < i < 1500:
-                q = (q_val + q)/2
-            elif np.abs(q_val) < 0.01 and i > 1500:
-                q = q_val
 
         #iteration
         FT_Psi2_0 = (2 - 3/ii) * FT_Psi1_0 + dt**2 * P_inv * ((1/2) * Lap * FT_Psi1_0 + FT_PsiX_0) - (1 - 3/ii)*FT_Psi0_0
@@ -141,10 +127,6 @@ def linear_Zeeman_groundstate(mu_zeeman, p, params):
         Error_neg.append(e_neg)
         Error_pos.append(e_pos)
 
-        # not stopping before q = q_val
-        if q != q_val:
-            e_0 = 1; e_neg = 1; e_pos = 1
-
         # updating wavefunctions
         FT_Psi0_0 = FT_Psi1_0; FT_Psi1_0 = FT_Psi2_0
         FT_Psi0_neg = FT_Psi1_neg; FT_Psi1_neg = FT_Psi2_neg
@@ -153,10 +135,6 @@ def linear_Zeeman_groundstate(mu_zeeman, p, params):
 
     Iterations = i
     x_Iter = np.arange(0, Iterations, 1)
-
-    # checking if q is corret
-    if q != q_val:
-        print("q is not ", q_val)
 
     # getting the physical wavefunction
     Psi2_0_phys =  Psi2_0 / np.sqrt(dx)
@@ -175,86 +153,46 @@ def linear_Zeeman_groundstate(mu_zeeman, p, params):
     max_F_perp = np.max(np.abs(F_perp))
     max_F_z = np.max(np.abs(F_z))
 
-    # calculating number of particles
-    Nparticles = np.sum(rho)
-
     # showing interesting results
     print('Number of Iterations =', Iterations)
 
     #calculating max density
     rho_max = np.max(rho)
 
+    #calculating the energy
+    if (c == 0):
+        # calculating Laplace
+        Lap_0 = ifftn( (1/2) * Lap * FT_Psi2_0)
+        Lap_neg = ifftn( (1/2) * Lap * FT_Psi2_neg)
+        Lap_pos = ifftn( (1/2) * Lap * FT_Psi2_pos)
+
+        # calculating energy densities
+        energy_0 = np.conj(Psi2_0) * Lap_0 + np.conj(Psi2_0) * (V(x) - mu_zeeman) * Psi2_0
+        energy_neg = np.conj(Psi2_neg) * Lap_neg + np.conj(Psi2_neg) * (V(x) - mu_zeeman + p + q) * Psi2_neg
+        energy_pos = np.conj(Psi2_pos) * Lap_pos + np.conj(Psi2_pos) * (V(x) - mu_zeeman - p + q) * Psi2_pos
+
+        # calculating the energy
+        energy_tot = np.real(energy_0 + energy_neg + energy_pos)
+        Energy = np.sum(energy_tot)
+
     if Nparticles >= 1:
-        return Psi2_0, Psi2_neg, Psi2_pos, F_perp, F_z, mu_zeeman, p, rho_max, Magnetisation, Magnetisation_per_N, Nparticles
+        return Psi2_0, Psi2_neg, Psi2_pos, F_perp, F_z, mu_zeeman, p, rho_max, Magnetisation, Magnetisation_per_N, Nparticles, Energy
     else:
-        Psi2_0, Psi2_neg, Psi2_pos, F_perp, F_z, rho_max, Magnetisation, Magnetisation_per_N, Nparticles = (np.zeros(N_points),np.zeros(N_points),np.zeros(N_points),np.zeros(N_points),np.zeros(N_points),0,0,0,0)
-        return Psi2_0, Psi2_neg, Psi2_pos, F_perp, F_z, mu_zeeman, p, rho_max, Magnetisation, Magnetisation_per_N, Nparticles
-
-#Phasediagram
-def Phases(mu, p, params):
-    #getting the parameters
-    Psi2_0, Psi2_neg, Psi2_pos, F_perp, F_z, mu_value, p_value, rho_max, Magnetisation, Magnetisation_per_N, Nparticles = linear_Zeeman_groundstate(mu, p, params)
+        Psi2_0, Psi2_neg, Psi2_pos, F_perp, F_z, rho_max, Magnetisation, Magnetisation_per_N, Nparticles, Energy = (np.zeros(N_points),np.zeros(N_points),np.zeros(N_points),np.zeros(N_points),np.zeros(N_points),0,0,0,0,0)
+        return Psi2_0, Psi2_neg, Psi2_pos, F_perp, F_z, mu_zeeman, p, rho_max, Magnetisation, Magnetisation_per_N, Nparticles, Energy
     
-    # define some values
-    abs_Psi2_0 = np.abs(Psi2_0)**2
-    abs_Psi2_neg = np.abs(Psi2_neg)**2
-    abs_Psi2_pos = np.abs(Psi2_pos)**2
-    max_F_perp = np.max(np.abs(F_perp))
-    max_F_z = np.max(np.abs(F_z))
-    toleranz = rho_max / 1000
-    
-    # define conditions
-    cond_polar = (np.max(abs_Psi2_0) > toleranz) and (np.max(abs_Psi2_neg) < toleranz) and (np.max(abs_Psi2_pos) < toleranz) and (max_F_z < toleranz) and (max_F_perp < toleranz)
-    cond_antiferro = (np.max(abs_Psi2_neg) > toleranz and np.max(abs_Psi2_pos) > toleranz) and (max_F_z < toleranz) and (max_F_perp < toleranz)
-    cond_easy_axis = (max_F_z > toleranz) and (max_F_perp < toleranz)
-    cond_easy_plane = (max_F_perp > toleranz) and (max_F_z < toleranz)
-    cond_vacuum = Nparticles < 1
+def Occupation_distribution(mu_zeeman):
+    params = [0.7, 2, 4000]
+    groundstate = free_BEC_groundstate(mu_zeeman, 0, params)
+    N_par = groundstate[10]
+    return N_par
 
-    # choosing which phase is realized
-    if cond_polar:
-        phase = 0
-    elif cond_antiferro:
-        phase = 1
-    elif cond_easy_axis:
-        phase = 2
-    elif cond_easy_plane:
-        phase = 3
-    elif cond_vacuum:
-        phase = 4
-    else:
-        phase = 5 # if none of the conditions is met
-    return phase, mu_value, p_value, Magnetisation, Magnetisation_per_N
+mu_array = np.linspace(1/1.17 * 1.530982e-33, 1/1.16 * 1.530982e-33, 100)
 
-# define parameter in physical units
-mu_zeeman = np.linspace(1/100 * 1.530982e-33, 5 * 1.530982e-33, 10)
-p = np.linspace(0, 1, 15)
+# using pool
+if __name__ == '__main__':
+    with mp.Pool(processes=mp.cpu_count()) as pool:
+        N_par_array = pool.map(Occupation_distribution, mu_array)
 
-# collecting the unitless parameter q and c1
-mu_unitless = []
-p_unitless = []
-result_z = []
-result_Mag = []
-result_Mag_per_N = []
-for mu_val in mu_zeeman:
-    array_z = []
-    array_Mag = []
-    array_Mag_per_N = []
-    array_Mag_per_N_0 = []
-    array_Mag_per_N_1 = []
-    for p_val in p:
-        if (3 > p_val > 2):
-            params = [0.7, 2, 6000]
-        else:
-            params = [0.7, 2, 6000]
-        z, mu_unless, p_unless, Magnetisation, Magnetisation_per_N = Phases(mu_val, p_val, params)
-        array_z.append(z)
-        array_Mag.append(Magnetisation)
-        array_Mag_per_N.append(Magnetisation_per_N)
-        if (mu_val == mu_zeeman[0]):
-            p_unitless.append(p_unless)
-    mu_unitless.append(mu_unless)
-    result_z.append(array_z)
-    result_Mag.append(array_Mag)
-    result_Mag_per_N.append(array_Mag_per_N)
-
-np.savez("Around_c_squared_N.npz", array1 = result_z, array2 = mu_unitless, array3 = p_unitless, array4 = result_Mag, array5 = result_Mag_per_N)
+    # saving data
+    np.savez("mu_vs_Npar_mu_code.npz", mu=mu_array, N_par=N_par_array)

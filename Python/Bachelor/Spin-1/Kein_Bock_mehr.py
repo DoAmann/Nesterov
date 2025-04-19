@@ -6,20 +6,18 @@ import scipy.constants as const
 # properties of the grid
 N_points = 2**11 # number of gridpoints
 #L = N_points // 4 # the unitless space
-L = 2**10
+L = 400
 ddx = 2 * L / N_points # spacing in the uniless space
 
 x = np.arange(- L, L, ddx)
 k_array = 2*np.pi*np.fft.fftfreq(N_points, ddx)  # momentum grid
-dk = np.abs(k_array[1] - k_array[0])
 
 # define physical properties
-N_par = 100 # number of particles
+N_par = 2e4 # number of particles
 m = 1.44*10**(-25) # atom mass
 l = 220e-6 # length of the system in meters
 n = N_par / (2 * L) # particle density
-q = 0 # units in Hz
-p = 0.0 # units in Hz
+q = -400 # units in Hz
 omega_parallel = 2* np.pi * 4 # Trapping frequency in longitudinal direction in Hz
 omega_perp =  2 * np.pi * 400 #  Trapping frequency in transverse direction in Hz (isotropic in transverse direction)
 a_B = const.physical_constants ["Bohr radius"] [0] # Bohr radius in meter
@@ -36,11 +34,8 @@ c0 = 4*np.pi*const.hbar**2/(3*m)*(a0+2*a2)/(2*np.pi*a_HO**2) # density-density i
 # transforming in unitless dimensions
 c0 *= m *dx/ (const.hbar**2) # make unitless
 c = c0 # already unitless, spin-spin interactions
-c = 0.017
 q *= 2 * np.pi * Tscale
-p *= 2 * np.pi * Tscale
 omega_parallel *= Tscale  #making frequency unitless
-p = 0.008
 
 # define potential
 def V(x):
@@ -61,7 +56,7 @@ def Psi_Initial_neg(x):
     return np.exp(- x**2 / (2 * sigma**2)) 
 
 def Psi_Initial_pos(x):
-    return np.exp(- x**2 / (2 * sigma**2)) 
+    return 0.998 * np.exp(- x**2 / (2 * sigma**2)) 
 
 # normalize initial wavefunctions
 Psi_i_0 = Psi_Initial_0(x); Psi_i_neg = Psi_Initial_neg(x); Psi_i_pos = Psi_Initial_pos(x)
@@ -76,16 +71,16 @@ FT_Psi1_0 = FT_Psi0_0; FT_Psi1_neg = FT_Psi0_neg; FT_Psi1_pos = FT_Psi0_pos
 
 rho = np.abs(Psi_0)**2 + np.abs(Psi_neg)**2 + np.abs(Psi_pos)**2
 FT_PsiX_0 = fftn( -Vx * Psi_0 - c * rho * Psi_0) + fftn( - c * (np.abs(Psi_pos)**2 + np.abs(Psi_neg)**2) * Psi_0 - 2 * c * Psi_neg * np.conj(Psi_0) * Psi_pos)
-FT_PsiX_neg = fftn( -Vx * Psi_neg - c * rho * Psi_neg) + fftn((- p - q) * Psi_neg - c * (np.abs(Psi_neg)**2 + np.abs(Psi_0)**2 - np.abs(Psi_pos)**2) * Psi_neg - c * (Psi_0)**2 * np.conj(Psi_pos))
-FT_PsiX_pos = fftn( -Vx * Psi_pos - c * rho * Psi_pos) + fftn((p - q) * Psi_pos - c * (np.abs(Psi_pos)**2 + np.abs(Psi_0)**2 - np.abs(Psi_neg)**2) * Psi_pos - c * (Psi_0)**2 * np.conj(Psi_neg))
+FT_PsiX_neg = fftn( -Vx * Psi_neg - c * rho * Psi_neg) + fftn( - q * Psi_neg - c * (np.abs(Psi_neg)**2 + np.abs(Psi_0)**2 - np.abs(Psi_pos)**2) * Psi_neg - c * (Psi_0)**2 * np.conj(Psi_pos))
+FT_PsiX_pos = fftn( -Vx * Psi_pos - c * rho * Psi_pos) + fftn( - q * Psi_pos - c * (np.abs(Psi_pos)**2 + np.abs(Psi_0)**2 - np.abs(Psi_neg)**2) * Psi_pos - c * (Psi_0)**2 * np.conj(Psi_neg))
 
 #iteration parameters
-dt = 0.6; c_pre = 7;               #stepsize and parameter for preconditioner
-Restart = 1000                     #for the condition of restarting
+dt = 0.5; c_pre = 7;               #stepsize and parameter for preconditioner
+Restart = 700                     #for the condition of restarting
 restarts = 0                    #for counting the number of restarts
-ITER = 140000                     #number of maximal iterations
-tol=10**(-11)                   #tolerance
-tol_mu = 1e-5                      # choose how mu is calculated
+ITER = 10000                     #number of maximal iterations
+tol=10**(-10)                   #tolerance
+tol_mu = 1e-2                      # choose how mu is calculated
 max_0 = 100; max_neg = 100; max_pos = 100
 jj = 0; ii = 0; i = 0 
 e_0=1; e_neg=1; e_pos=1
@@ -96,8 +91,27 @@ q_val = np.copy(q)
 while np.max([e_0, e_neg, e_pos])>tol and i < ITER:
     i += 1; ii += 1; jj += 1
 
+    # for small q
+    if (q_val != 0): 
+        if np.abs(q_val) < 0.01 and i < 1000:
+            q = 0.01
+        elif np.abs(q_val) < 0.01 and 1000 < i < 1500:
+            q = (q_val + q)/2
+        elif np.abs(q_val) < 0.01 and i > 1500:
+            q = q_val
+    
+    #elif (delta >= 0.05) and (q_val != 0): 
+     #   if np.abs(q_val) < 0.01 and i < 300:
+      #      q = 0.1
+       # elif np.abs(q_val) < 0.01 and 300 < i < 800: 
+      #      q = 0.05
+      #  elif np.abs(q_val) < 0.01 and 800 < i < 1500:
+      #      q = (q_val + q)/2
+      #  elif np.abs(q_val) < 0.01 and i > 1500:
+      #      q = q_val
+
     # calculate mu
-    if (max_0 > tol_mu):
+    if max_0 > tol_mu:
         if (max_neg > tol_mu) and (max_pos > tol_mu):
             mu_0 = -np.sum(np.conj( (1/2) * Lap * FT_Psi1_0 + FT_PsiX_0) * P_inv * FT_Psi1_0) / np.sum(np.conj(FT_Psi1_0) * P_inv * FT_Psi1_0)
             mu_0 = np.real(mu_0)
@@ -169,9 +183,9 @@ while np.max([e_0, e_neg, e_pos])>tol and i < ITER:
     FT_Psi2_0 *= amp; FT_Psi2_neg *= amp; FT_Psi2_pos *= amp
 
     #gradient restart
-    sum1 = np.sum((np.conj((1/2) * Lap * FT_Psi1_0 + FT_PsiX_0 + mu * FT_Psi1_0)) * (FT_Psi2_0 - FT_Psi1_0))
-    sum2 = np.sum((np.conj((1/2) * Lap * FT_Psi1_neg + FT_PsiX_neg + mu * FT_Psi1_neg)) * (FT_Psi2_neg - FT_Psi1_neg))
-    sum3 = np.sum((np.conj((1/2) * Lap * FT_Psi1_pos + FT_PsiX_pos + mu * FT_Psi1_pos)) * (FT_Psi2_pos - FT_Psi1_pos))
+    sum1 = np.sum((np.conj((1/2) * Lap * FT_Psi1_0 + FT_PsiX_0 + mu * FT_Psi1_0)) * (FT_PsiX_0 - FT_Psi1_0))
+    sum2 = np.sum((np.conj((1/2) * Lap * FT_Psi1_neg + FT_PsiX_neg + mu * FT_Psi1_neg)) * (FT_PsiX_neg - FT_Psi1_neg))
+    sum3 = np.sum((np.conj((1/2) * Lap * FT_Psi1_pos + FT_PsiX_pos + mu * FT_Psi1_pos)) * (FT_PsiX_pos - FT_Psi1_pos))
 
     cond1 = sum1 + sum2 + sum3
     if cond1 > 0 and ii > Restart:
@@ -182,8 +196,8 @@ while np.max([e_0, e_neg, e_pos])>tol and i < ITER:
 
     # calculating residual error
     FT_PsiX_0 = fftn( -Vx * Psi2_0 - c * rho * Psi2_0) + fftn( - c * (np.abs(Psi2_pos)**2 + np.abs(Psi2_neg)**2) * Psi2_0 - 2 * c * Psi2_neg * np.conj(Psi2_0) * Psi2_pos)
-    FT_PsiX_neg = fftn( -Vx * Psi2_neg - c * rho * Psi2_neg) + fftn( (- p - q) * Psi2_neg - c * (np.abs(Psi2_neg)**2 + np.abs(Psi2_0)**2 - np.abs(Psi2_pos)**2) * Psi2_neg - c * (Psi2_0)**2 * np.conj(Psi2_pos))
-    FT_PsiX_pos = fftn( -Vx * Psi2_pos - c * rho * Psi2_pos) + fftn( (p - q) * Psi2_pos - c * (np.abs(Psi2_pos)**2 + np.abs(Psi2_0)**2 - np.abs(Psi2_neg)**2) * Psi2_pos - c * (Psi2_0)**2 * np.conj(Psi2_neg))
+    FT_PsiX_neg = fftn( -Vx * Psi2_neg - c * rho * Psi2_neg) + fftn( - q * Psi2_neg - c * (np.abs(Psi2_neg)**2 + np.abs(Psi2_0)**2 - np.abs(Psi2_pos)**2) * Psi2_neg - c * (Psi2_0)**2 * np.conj(Psi2_pos))
+    FT_PsiX_pos = fftn( -Vx * Psi2_pos - c * rho * Psi2_pos) + fftn( - q * Psi2_pos - c * (np.abs(Psi2_pos)**2 + np.abs(Psi2_0)**2 - np.abs(Psi2_neg)**2) * Psi2_pos - c * (Psi2_0)**2 * np.conj(Psi2_neg))
 
     e_0 = np.sqrt( (ddx / N_points) * np.sum(np.abs((1/2) * Lap * FT_Psi2_0 + FT_PsiX_0 + mu * FT_Psi2_0)**2))
     e_neg = np.sqrt( (ddx / N_points) * np.sum(np.abs((1/2) * Lap * FT_Psi2_neg + FT_PsiX_neg + mu * FT_Psi2_neg)**2))
@@ -225,35 +239,18 @@ F_z = np.abs(Psi2_pos)**2 - np.abs(Psi2_neg)**2
 max_F_perp = np.max(np.abs(F_perp))
 max_F_z = np.max(np.abs(F_z))
 
-#calculating the energy
-if (c == 0):
-    # calculating Laplace
-    FT_EX_0 = np.conj(Psi2_0) * (V(x)) * Psi2_0
-    FT_EX_neg = np.conj(Psi2_neg) * (V(x) + p + q) * Psi2_neg
-    FT_EX_pos = np.conj(Psi2_pos) * (V(x) - p + q) * Psi2_pos
-
-    # calculating energy densities
-    energy_0 = - np.conj(FT_Psi2_0) * (1/2) * Lap * FT_Psi2_0 + fftn(FT_EX_0) # is there a minus infront?
-    energy_neg = - np.conj(FT_Psi2_neg) * (1/2) * Lap * FT_Psi2_neg + fftn(FT_EX_neg) 
-    energy_pos = - np.conj(FT_Psi2_pos) * (1/2) * Lap * FT_Psi2_pos + fftn(FT_EX_pos)
-
-    # calculating the energy
-    energy_tot = np.real(energy_0 + energy_neg + energy_pos)
-    Energy = dk * np.sum(energy_tot)
-
 # showing interesting results
 print('Number of Iterations =', Iterations)
 print('Number of Resets =', restarts)
 print('Number of particles = ', ddx * np.sum(rho))
 print("c unitless =", c)
 print("Maximal density = ", np.max(rho))
-print("chemical potential mu = ", mu)
 
 # Plot of the results 
-fig, ax = plt.subplots(2, 2, figsize=(15, 10)) 
+fig, ax = plt.subplots(2, 2, figsize=(12, 8)) 
 
 # First Plot
-ax[0,0].plot(x, np.abs(Psi2_0)**2, color='green', label= f'$(\\mu, p)=$ ({np.round(mu, 4)}, {np.round(p, 8)}) \n' + fr'$c =$ {np.round(c, 10)}' + f'\n' + f'q = {np.round(q, 5)}')
+ax[0,0].plot(x, np.abs(Psi2_0)**2, color='green', label= f'$\\mu=$ {np.round(mu, 4)} \n' + fr'$c_0 =$ {np.round(c, 10)}' + f'\n' + f'q = {np.round(q, 5)}')
 ax[0,0].plot(x, np.abs(Psi2_neg)**2, color='blue', label= r'$\Psi_{-1}$', linestyle = 'dashed')
 ax[0,0].plot(x, np.abs(Psi2_pos)**2, color='red', label= r'$\Psi_{1}$', linestyle = 'dashdot')
 ax[0,0].legend()
